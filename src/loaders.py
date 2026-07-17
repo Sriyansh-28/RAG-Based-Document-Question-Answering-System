@@ -2,7 +2,6 @@ import os
 import tempfile
 from typing import List
 
-from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     PyPDFLoader,
     Docx2txtLoader,
@@ -18,8 +17,8 @@ def _save_to_temp(uploaded_file) -> str:
         return tmp.name
 
 
-def load_uploaded_files(uploaded_files) -> List[Document]:
-    all_docs: List[Document] = []
+def load_uploaded_files(uploaded_files):
+    all_docs = []
 
     for uf in uploaded_files:
         ext = os.path.splitext(uf.name.lower())[1]
