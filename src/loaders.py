@@ -3,12 +3,16 @@ import tempfile
 import pandas as pd
 import streamlit as st
 
-# Optional imports
+# PDF import fallback
 try:
     from PyPDF2 import PdfReader
 except Exception:
-    PdfReader = None
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        PdfReader = None
 
+# DOCX optional import
 try:
     import docx
 except Exception:
