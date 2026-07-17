@@ -1,6 +1,5 @@
 from typing import Dict, Any, List
 import numpy as np
-import faiss
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 import streamlit as st
@@ -17,7 +16,7 @@ def chunk_text(text: str, chunk_size: int = 800, chunk_overlap: int = 150) -> Li
         chunks.append(text[start:end])
         if end == n:
             break
-        start = end - chunk_overlap
+        start = max(0, end - chunk_overlap)
     return chunks
 
 
@@ -31,14 +30,12 @@ def get_generator():
     return pipeline("text2text-generation", model="google/flan-t5-base")
 
 
+def _normalize(v: np.ndarray) -> np.ndarray:
+    norm = np.linalg.norm(v, axis=1, keepdims=True) + 1e-12
+    return v / norm
+
+
 def build_vectorstore(documents, chunk_size: int = 800, chunk_overlap: int = 150):
-    """
-    documents format expected from loaders.py:
-    [
-      {"page_content": "...", "metadata": {"source": "...", "chunk_id": 0}},
-      ...
-    ]
-    """
     embedding_model = get_embedding_model()
 
     chunk_texts = []
@@ -59,17 +56,13 @@ def build_vectorstore(documents, chunk_size: int = 800, chunk_overlap: int = 150
         return None
 
     embeddings = embedding_model.encode(chunk_texts, convert_to_numpy=True).astype("float32")
-
-    # cosine similarity via normalized vectors + inner product
-    faiss.normalize_L2(embeddings)
-    index = faiss.IndexFlatIP(embeddings.shape[1])
-    index.add(embeddings)
+    embeddings = _normalize(embeddings)
 
     return {
-        "index": index,
         "embedding_model": embedding_model,
         "texts": chunk_texts,
-        "metas": chunk_metas
+        "metas": chunk_metas,
+        "embeddings": embeddings
     }
 
 
@@ -78,22 +71,19 @@ def answer_question(vector_db, question: str, k: int = 4) -> Dict[str, Any]:
         return {"answer": "Vector store is empty.", "context": "", "sources": []}
 
     embedding_model = vector_db["embedding_model"]
-    index = vector_db["index"]
     texts = vector_db["texts"]
     metas = vector_db["metas"]
+    embeddings = vector_db["embeddings"]
 
     q_emb = embedding_model.encode([question], convert_to_numpy=True).astype("float32")
-    faiss.normalize_L2(q_emb)
+    q_emb = _normalize(q_emb)
 
+    sims = np.dot(embeddings, q_emb[0])  # cosine similarity
     k = min(k, len(texts))
-    scores, ids = index.search(q_emb, k)
+    top_idx = np.argsort(-sims)[:k]
 
-    retrieved_chunks = []
-    sources = []
-    for idx in ids[0]:
-        if 0 <= idx < len(texts):
-            retrieved_chunks.append(texts[idx])
-            sources.append(metas[idx])
+    retrieved_chunks = [texts[i] for i in top_idx]
+    sources = [metas[i] for i in top_idx]
 
     context = "\n\n".join(retrieved_chunks)[:5000]
 
