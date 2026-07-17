@@ -1,7 +1,6 @@
 import os
 import tempfile
-from pypdf import PdfReader
-import docx
+from PyPDF2 import PdfReader
 import pandas as pd
 
 
