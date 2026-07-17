@@ -100,7 +100,7 @@ This reduces hallucinations and keeps responses traceable to source chunks.
 
 ---
 
-## Suggested Repository Layout
+## Suggested Repository Layout (Notebook-Oriented)
 
 ```text
 RAG-Based-Document-Question-Answering-System/
@@ -129,3 +129,114 @@ RAG-Based-Document-Question-Answering-System/
 ## Resume-Ready Project Description
 
 Developed a Retrieval-Augmented Generation (RAG) pipeline for document question answering using NLP, vector search, and LLM-based response generation. Implemented document chunking and semantic embeddings to retrieve relevant context, then generated accurate, context-grounded answers through prompt-engineered LLM integration. Built and iterated in a Colab-style notebook workflow inside VS Code for fast experimentation and reproducible development.
+
+---
+
+## App Version (Runnable + Deployable)
+
+This repository also includes a **Streamlit-based application** for multi-format document question answering.
+
+### Supported Upload File Types
+
+- `.pdf`
+- `.docx`
+- `.txt`
+- `.md`
+- `.csv`
+
+### Repository Layout (App-Oriented)
+
+```text
+RAG-Based-Document-Question-Answering-System/
+├── app.py
+├── src/
+│   ├── loaders.py
+│   └── rag_pipeline.py
+├── requirements.txt
+└── README.md
+```
+
+### Local Setup and Execution
+
+1. Create virtual environment (recommended):
+```bash
+python -m venv .venv
+```
+
+2. Activate environment:
+
+**Windows (PowerShell):**
+```bash
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (CMD):**
+```bash
+.venv\Scripts\activate.bat
+```
+
+**Mac/Linux:**
+```bash
+source .venv/bin/activate
+```
+
+3. Install dependencies:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+4. Run the app:
+```bash
+streamlit run app.py
+```
+
+5. Open in browser:
+`http://localhost:8501`
+
+### How to Use the App
+
+1. Upload one or multiple documents.
+2. Click **Build / Rebuild Index**.
+3. Ask a natural language question.
+4. Get:
+   - grounded answer
+   - retrieved context
+   - source file references
+
+---
+
+## Deployment
+
+### Option 1: Hugging Face Spaces (Recommended)
+
+1. Create a new **Streamlit Space**.
+2. Upload/push repository files (`app.py`, `src/`, `requirements.txt`, `README.md`).
+3. Wait for build completion.
+4. Use the generated public URL.
+
+### Option 2: Render
+
+Use these settings:
+
+- **Build Command**
+```bash
+pip install -r requirements.txt
+```
+
+- **Start Command**
+```bash
+streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+```
+
+---
+
+## Notes
+
+- If the answer is not present in retrieved context, the system should respond that it does not know.
+- First run may take longer because embedding and generation models are downloaded and cached.
+- For production, you can add:
+  - persistent vector DB
+  - user authentication
+  - API-based LLM providers (OpenAI/Gemini)
+  - richer source citation UI
