@@ -1,10 +1,9 @@
 streamlit
-langchain==0.2.16
-langchain-community==0.2.16
-langchain-core==0.2.38
-sentence-transformers
 faiss-cpu
-pypdf
-docx2txt
+sentence-transformers
 transformers
 torch
+pypdf
+python-docx
+pandas
+numpy
