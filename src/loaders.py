@@ -1,8 +1,9 @@
 import os
 import tempfile
 import pandas as pd
+import streamlit as st
 
-# Safe optional imports
+# Optional imports
 try:
     from PyPDF2 import PdfReader
 except Exception:
@@ -16,12 +17,20 @@ except Exception:
 
 def _save_to_temp(uploaded_file) -> str:
     suffix = os.path.splitext(uploaded_file.name)[1]
+    data = uploaded_file.getvalue()  # safer for Streamlit UploadedFile
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(uploaded_file.read())
+        tmp.write(data)
         return tmp.name
 
 
 def load_uploaded_files(uploaded_files):
+    """
+    Returns list of docs in format:
+    [
+      {"page_content": "...", "metadata": {"source": "file.ext", "chunk_id": 0}},
+      ...
+    ]
+    """
     all_docs = []
 
     for uf in uploaded_files:
@@ -33,35 +42,55 @@ def load_uploaded_files(uploaded_files):
 
             if ext == ".pdf":
                 if PdfReader is None:
-                    raise ImportError("PyPDF2 not available")
+                    st.warning(f"PyPDF2 not available. Skipping: {uf.name}")
+                    continue
+
                 reader = PdfReader(temp_path)
                 pages = [p.extract_text() or "" for p in reader.pages]
-                text = "\n".join(pages)
+                text = "\n".join(pages).strip()
+
+                # Key fix: handle scanned/image-only PDFs
+                if not text:
+                    st.error(
+                        f"{uf.name}: No selectable text found (likely scanned/image PDF). "
+                        "Please upload OCR-converted PDF or TXT/DOCX."
+                    )
+                    continue
 
             elif ext == ".docx":
                 if docx is None:
-                    # Skip DOCX gracefully if dependency missing
-                    text = ""
-                else:
-                    d = docx.Document(temp_path)
-                    text = "\n".join([p.text for p in d.paragraphs])
+                    st.warning(f"python-docx not available. Skipping: {uf.name}")
+                    continue
+                d = docx.Document(temp_path)
+                text = "\n".join([p.text for p in d.paragraphs]).strip()
 
             elif ext in [".txt", ".md"]:
                 with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
+                    text = f.read().strip()
 
             elif ext == ".csv":
-                df = pd.read_csv(temp_path)
-                text = df.to_csv(index=False)
+                try:
+                    df = pd.read_csv(temp_path)
+                except Exception:
+                    df = pd.read_csv(temp_path, encoding="latin-1")
+                text = df.to_csv(index=False).strip()
 
-            if text.strip():
+            else:
+                st.info(f"Unsupported file type skipped: {uf.name}")
+                continue
+
+            if text:
                 all_docs.append({
                     "page_content": text,
                     "metadata": {"source": uf.name, "chunk_id": 0}
                 })
+                st.success(f"Loaded: {uf.name} ({len(text)} chars)")
+            else:
+                st.warning(f"No readable content found in: {uf.name}")
 
-        except Exception:
-            continue
+        except Exception as e:
+            st.error(f"Failed to process {uf.name}: {e}")
+
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
