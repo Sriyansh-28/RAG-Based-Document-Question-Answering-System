@@ -1,13 +1,17 @@
 import os
 import tempfile
 import pandas as pd
-import docx
 
-# Safe PDF import with fallback
+# Safe optional imports
 try:
     from PyPDF2 import PdfReader
 except Exception:
     PdfReader = None
+
+try:
+    import docx
+except Exception:
+    docx = None
 
 
 def _save_to_temp(uploaded_file) -> str:
@@ -18,13 +22,6 @@ def _save_to_temp(uploaded_file) -> str:
 
 
 def load_uploaded_files(uploaded_files):
-    """
-    Returns list of dict docs:
-    [
-      {"page_content": "...", "metadata": {"source": "file.ext", "chunk_id": 0}},
-      ...
-    ]
-    """
     all_docs = []
 
     for uf in uploaded_files:
@@ -36,14 +33,18 @@ def load_uploaded_files(uploaded_files):
 
             if ext == ".pdf":
                 if PdfReader is None:
-                    raise ImportError("PyPDF2 is not installed in environment.")
+                    raise ImportError("PyPDF2 not available")
                 reader = PdfReader(temp_path)
-                pages = [page.extract_text() or "" for page in reader.pages]
+                pages = [p.extract_text() or "" for p in reader.pages]
                 text = "\n".join(pages)
 
             elif ext == ".docx":
-                d = docx.Document(temp_path)
-                text = "\n".join([p.text for p in d.paragraphs])
+                if docx is None:
+                    # Skip DOCX gracefully if dependency missing
+                    text = ""
+                else:
+                    d = docx.Document(temp_path)
+                    text = "\n".join([p.text for p in d.paragraphs])
 
             elif ext in [".txt", ".md"]:
                 with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -53,23 +54,14 @@ def load_uploaded_files(uploaded_files):
                 df = pd.read_csv(temp_path)
                 text = df.to_csv(index=False)
 
-            else:
-                # unsupported extension -> skip
-                text = ""
-
-            if text and text.strip():
+            if text.strip():
                 all_docs.append({
                     "page_content": text,
-                    "metadata": {
-                        "source": uf.name,
-                        "chunk_id": 0
-                    }
+                    "metadata": {"source": uf.name, "chunk_id": 0}
                 })
 
         except Exception:
-            # Continue with other files if one fails
             continue
-
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
