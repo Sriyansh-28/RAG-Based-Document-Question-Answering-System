@@ -1,8 +1,5 @@
 from typing import Dict, Any, List
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline
-import streamlit as st
+import re
 
 
 def chunk_text(text: str, chunk_size: int = 800, chunk_overlap: int = 150) -> List[str]:
@@ -20,26 +17,14 @@ def chunk_text(text: str, chunk_size: int = 800, chunk_overlap: int = 150) -> Li
     return chunks
 
 
-@st.cache_resource
-def get_embedding_model():
-    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-
-@st.cache_resource
-def get_generator():
-    return pipeline("text2text-generation", model="google/flan-t5-base")
-
-
-def _normalize(v: np.ndarray) -> np.ndarray:
-    norm = np.linalg.norm(v, axis=1, keepdims=True) + 1e-12
-    return v / norm
+def tokenize(s: str) -> set:
+    return set(re.findall(r"[a-zA-Z0-9]+", s.lower()))
 
 
 def build_vectorstore(documents, chunk_size: int = 800, chunk_overlap: int = 150):
-    embedding_model = get_embedding_model()
-
     chunk_texts = []
     chunk_metas = []
+    chunk_tokens = []
 
     for doc in documents:
         text = doc.get("page_content", "")
@@ -48,21 +33,19 @@ def build_vectorstore(documents, chunk_size: int = 800, chunk_overlap: int = 150
 
         pieces = chunk_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         for i, ch in enumerate(pieces):
-            if ch.strip():
+            ch = ch.strip()
+            if ch:
                 chunk_texts.append(ch)
                 chunk_metas.append({"source": source, "chunk_id": i})
+                chunk_tokens.append(tokenize(ch))
 
     if not chunk_texts:
         return None
 
-    embeddings = embedding_model.encode(chunk_texts, convert_to_numpy=True).astype("float32")
-    embeddings = _normalize(embeddings)
-
     return {
-        "embedding_model": embedding_model,
         "texts": chunk_texts,
         "metas": chunk_metas,
-        "embeddings": embeddings
+        "tokens": chunk_tokens
     }
 
 
@@ -70,36 +53,40 @@ def answer_question(vector_db, question: str, k: int = 4) -> Dict[str, Any]:
     if vector_db is None:
         return {"answer": "Vector store is empty.", "context": "", "sources": []}
 
-    embedding_model = vector_db["embedding_model"]
     texts = vector_db["texts"]
     metas = vector_db["metas"]
-    embeddings = vector_db["embeddings"]
+    tokens = vector_db["tokens"]
 
-    q_emb = embedding_model.encode([question], convert_to_numpy=True).astype("float32")
-    q_emb = _normalize(q_emb)
+    q_tokens = tokenize(question)
+    if not q_tokens:
+        return {"answer": "Please ask a valid question.", "context": "", "sources": []}
 
-    sims = np.dot(embeddings, q_emb[0])  # cosine similarity
-    k = min(k, len(texts))
-    top_idx = np.argsort(-sims)[:k]
+    # Jaccard similarity
+    scores = []
+    for i, tks in enumerate(tokens):
+        inter = len(q_tokens & tks)
+        union = len(q_tokens | tks) or 1
+        score = inter / union
+        scores.append((score, i))
 
-    retrieved_chunks = [texts[i] for i in top_idx]
-    sources = [metas[i] for i in top_idx]
+    scores.sort(key=lambda x: x[0], reverse=True)
+    top = [i for s, i in scores[: max(1, min(k, len(scores)))] if s > 0]
 
+    if not top:
+        return {
+            "answer": "I do not know based on the provided documents.",
+            "context": "",
+            "sources": []
+        }
+
+    retrieved_chunks = [texts[i] for i in top]
+    sources = [metas[i] for i in top]
     context = "\n\n".join(retrieved_chunks)[:5000]
 
-    prompt = f"""You are a helpful assistant.
-Answer ONLY from the provided context.
-If the answer is not present in context, say "I do not know based on the provided documents."
-
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:"""
-
-    generator = get_generator()
-    answer = generator(prompt, max_new_tokens=220, do_sample=False)[0]["generated_text"]
+    # Lightweight grounded answer: return best matching chunk snippet
+    best_chunk = retrieved_chunks[0]
+    answer = best_chunk[:700]
+    if len(best_chunk) > 700:
+        answer += "..."
 
     return {"answer": answer, "context": context, "sources": sources}
