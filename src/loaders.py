@@ -1,13 +1,8 @@
 import os
 import tempfile
-from typing import List
-
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    Docx2txtLoader,
-    TextLoader,
-    CSVLoader,
-)
+from pypdf import PdfReader
+import docx
+import pandas as pd
 
 
 def _save_to_temp(uploaded_file) -> str:
@@ -25,29 +20,30 @@ def load_uploaded_files(uploaded_files):
         temp_path = _save_to_temp(uf)
 
         try:
+            text = ""
+
             if ext == ".pdf":
-                loader = PyPDFLoader(temp_path)
-                docs = loader.load()
+                reader = PdfReader(temp_path)
+                pages = [p.extract_text() or "" for p in reader.pages]
+                text = "\n".join(pages)
 
             elif ext == ".docx":
-                loader = Docx2txtLoader(temp_path)
-                docs = loader.load()
+                d = docx.Document(temp_path)
+                text = "\n".join([p.text for p in d.paragraphs])
 
             elif ext in [".txt", ".md"]:
-                loader = TextLoader(temp_path, encoding="utf-8")
-                docs = loader.load()
+                with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
 
             elif ext == ".csv":
-                loader = CSVLoader(file_path=temp_path, encoding="utf-8")
-                docs = loader.load()
+                df = pd.read_csv(temp_path)
+                text = df.to_csv(index=False)
 
-            else:
-                docs = []
-
-            for i, d in enumerate(docs):
-                d.metadata["source"] = uf.name
-                d.metadata["chunk_id"] = i
-            all_docs.extend(docs)
+            if text.strip():
+                all_docs.append({
+                    "page_content": text,
+                    "metadata": {"source": uf.name, "chunk_id": 0}
+                })
 
         except Exception:
             continue
